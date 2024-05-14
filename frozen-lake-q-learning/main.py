@@ -3,12 +3,27 @@ import random
 from operator import itemgetter
 
 
-policy = [-1 for _ in range(4 * 4)]
 num_action_map = {0: "left", 1: "down", 2: "right", 3: "up", -1: "n/a"}
 
 
-def train():
-    env = gym.make("FrozenLake-v1", map_name="4x4", is_slippery=False)
+def train(
+    policy,
+    slippery=False,
+    map_name="4x4",
+    steps=1000,
+    learning_rate=0.9,
+    discount_factor=0.9,
+    epsilon=1,
+    decay=0.0001,
+    show_debug=True,
+    render=False,
+):
+    env = gym.make(
+        "FrozenLake-v1",
+        map_name=map_name,
+        is_slippery=slippery,
+        render_mode=("human" if render else None),
+    )
     current_state, _ = env.reset()
 
     def get_action(epsilon, current_state):
@@ -24,69 +39,47 @@ def train():
 
         return action
 
-    def get_adjusted_reward(current_state, next_state, action):
-        bad_states = [5, 7, 11, 12]
-        left_border_states = [0, 4, 8, 12]
-        right_border_states = [3, 7, 11, 15]
-        top_border_states = [0, 1, 2, 3]
-        bottom_border_states = [12, 13, 14, 15]
-
-        if next_state == 15:
-            return 5
-
-        if next_state in bad_states:
-            return -5
-
-        if num_action_map[action] == "down" and current_state in bottom_border_states:
-            return -2
-        if num_action_map[action] == "up" and current_state in top_border_states:
-            return -2
-        if num_action_map[action] == "left" and current_state in left_border_states:
-            return -2
-        if num_action_map[action] == "right" and current_state in right_border_states:
-            return -2
-
-        return 0
-
-    learning_rate = 0.01
-    discount_factor = 1
     next_state = 0
-    steps = 800
-    epsilon = 1
-    decay = 0.001
-    q = [[0 for _ in range(4)] for _ in range(16)]
+
+    q = [
+        [0 for _ in range(env.action_space.n)]
+        for _ in range(env.observation_space.n * env.observation_space.n)
+    ]
 
     for t in range(1, steps + 1):
         epsilon = max(0, epsilon - decay)
         action = get_action(epsilon, current_state)
 
         next_state, reward, terminated, truncated, _ = env.step(action)
-        reward = get_adjusted_reward(current_state, next_state, action)
-
         q[current_state][action] = q[current_state][action] + learning_rate * (
             reward
             + discount_factor
-            * max([q[next_state][possible_action] for possible_action in range(4)])
+            * max(
+                [
+                    q[next_state][possible_action]
+                    for possible_action in range(env.action_space.n)
+                ]
+            )
             - q[current_state][action]
         )
 
         if terminated or truncated:
-            observation, info = env.reset()
-            current_state = 0
+            current_state, _ = env.reset()
         else:
             current_state = next_state
-            new_action, _ = max(enumerate(q[current_state]), key=itemgetter(1))
-            policy[current_state] = new_action
 
-        if t % 100 == 0:
+        new_action, _ = max(enumerate(q[current_state]), key=itemgetter(1))
+        policy[current_state] = new_action
+
+        if t % 1000 == 0 and show_debug:
             print("Current Policy:", [num_action_map[p] for p in policy])
 
 
-def simulate():
+def simulate(policy, slippery=False, map_name="4x4"):
     terminated = False
     truncated = False
     env = gym.make(
-        "FrozenLake-v1", render_mode="human", map_name="4x4", is_slippery=False
+        "FrozenLake-v1", render_mode="human", map_name=map_name, is_slippery=slippery
     )
     current_state, _ = env.reset()
 
@@ -106,14 +99,14 @@ def simulate():
     env.close()
 
 
-def evaluate():
+def evaluate(policy, slippery=False, map_name="4x4"):
     passed = 0
     failed = 0
 
-    for i in range(0, 10000):
+    for i in range(0, 100):
         terminated = False
         truncated = False
-        env = gym.make("FrozenLake-v1", map_name="4x4", is_slippery=False)
+        env = gym.make("FrozenLake-v1", map_name=map_name, is_slippery=slippery)
         current_state, _ = env.reset()
 
         while not terminated and not truncated:
@@ -134,6 +127,28 @@ def evaluate():
 
 
 if __name__ == "__main__":
-    train()
-    evaluate()
-    simulate()
+    slippery = True
+    map_name = "4x4"
+    steps = 1500000
+    learning_rate = 0.9
+    discount_factor = 0.9
+    epsilon = 1
+    decay = 0.0001
+
+    temp_env = gym.make("FrozenLake-v1", map_name=map_name)
+    policy = [-1 for _ in range(temp_env.observation_space.n)]
+
+    train(
+        policy,
+        slippery=slippery,
+        map_name=map_name,
+        steps=steps,
+        learning_rate=learning_rate,
+        discount_factor=discount_factor,
+        epsilon=epsilon,
+        decay=decay,
+        show_debug=False,
+        render=False,
+    )
+    evaluate(policy, slippery=slippery, map_name=map_name)
+    simulate(policy, slippery=slippery, map_name=map_name)
