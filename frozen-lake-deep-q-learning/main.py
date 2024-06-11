@@ -16,7 +16,7 @@ env = gym.make(
     "FrozenLake-v1", map_name="4x4", is_slippery=False, render_mode="rgb_array"
 )
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch.set_default_device(device)
 
 
@@ -122,15 +122,24 @@ def train():
 
         env.reset()
         obs = torch.as_tensor(env.render())
-
+        step_count = 0
         while not done:
             action = agent.choose_action(obs)
             obs_, reward, trunc, term, info = env.step(action)
             done = term or trunc
+
+            if reward > 0:
+                reward += 10000
+            elif not done:
+                reward += obs_ - step_count
+            else:
+                reward -= 100
+
             obs_ = torch.as_tensor(env.render())
             score += reward
             agent.learn(obs, action, reward, obs_)
             obs = obs_
+            step_count += 1
 
         scores.append(score)
         eps_history.append(agent.epsilon)
@@ -172,9 +181,9 @@ def simulate():
 
     while not terminated and not truncated:
         action = agent.choose_action(current_state_t)
-        env.step(action)
         next_state, _, terminated, truncated, _ = env.step(action)
         env2.step(action)
+        env2.render()
         current_state_t = torch.as_tensor(env.render())
 
     env.close()
