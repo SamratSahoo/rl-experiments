@@ -1,195 +1,257 @@
+# Largely Based on: https://github.com/MehdiShahbazi/DQN-Frozenlake-Gymnasium/blob/master/DQN.py
+
+from collections import defaultdict, deque
 import gymnasium as gym
-import os
 
 from matplotlib import pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-import random
 import numpy as np
-from itertools import count
 
-from collections import deque
-
-env = gym.make(
-    "FrozenLake-v1", map_name="4x4", is_slippery=False, render_mode="rgb_array"
-)
+env = gym.make("FrozenLake-v1", map_name="4x4", is_slippery=False)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch.set_default_device(device)
 
 
+class ReplayBuffer:
+    def __init__(self, max_size=15000):
+        self.max_size = max_size
+        self.states = deque([], maxlen=max_size)
+        self.actions = deque([], maxlen=max_size)
+        self.rewards = deque([], maxlen=max_size)
+        self.next_states = deque([], maxlen=max_size)
+        self.dones = deque([], maxlen=max_size)
+
+    def append(self, state, action, reward, next_state, done):
+        self.states.append(state)
+        self.actions.append(action)
+        self.rewards.append(reward)
+        self.next_states.append(next_state)
+        self.dones.append(done)
+
+    def sample(self, k):
+        indices = np.random.choice(len(self), size=k, replace=False)
+
+        sampled_states = torch.stack(
+            [
+                torch.as_tensor(self.states[i], dtype=torch.float32, device=device)
+                for i in indices
+            ]
+        ).to(device)
+        sampled_actions = torch.as_tensor(
+            [self.actions[i] for i in indices], dtype=torch.long, device=device
+        )
+        sampled_rewards = torch.as_tensor(
+            [self.rewards[i] for i in indices], dtype=torch.float32, device=device
+        )
+        sampled_next_states = torch.stack(
+            [
+                torch.as_tensor(self.next_states[i], dtype=torch.float32, device=device)
+                for i in indices
+            ]
+        ).to(device)
+        sampled_dones = torch.as_tensor(
+            [self.dones[i] for i in indices], dtype=torch.bool, device=device
+        )
+
+        return (
+            sampled_states,
+            sampled_actions,
+            sampled_rewards,
+            sampled_next_states,
+            sampled_dones,
+        )
+
+    def __len__(self):
+        return len(self.actions)
+
+
 class DQN(nn.Module):
-    def __init__(self, input_dims, output_dim, lr):
+    def __init__(self, input_dims, output_dims, lr=1e-4):
         super(DQN, self).__init__()
-        self.output_dim = output_dim
-        self.conv1 = nn.Conv2d(input_dims[0], 32, 3, stride=4)
-        self.conv2 = nn.Conv2d(32, 64, 1, stride=2)
-        self.conv3 = nn.Conv2d(64, 64, 1, stride=1)
+        self.fc1 = nn.Linear(input_dims, 64)
+        self.fc2 = nn.Linear(64, 64)
+        self.fc3 = nn.Linear(64, output_dims)
 
-        self.fc1 = nn.Linear(32, 512)
-        self.fc2 = nn.Linear(512, self.output_dim)
-
-        self.optimizer = optim.Adam(self.parameters(), lr=lr)
         self.loss = nn.MSELoss()
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.to(self.device)
+        self.optimizer = optim.Adam(self.parameters(), lr=lr)
 
     def forward(self, x):
-        x = self.conv1(x)
-        x = F.relu(x)
-        x = self.conv2(x)
-        x = F.relu(x)
-        x = self.conv3(x)
-        x = F.relu(x)
-        x = x.view(x.size()[0], -1)
         x = self.fc1(x)
         x = F.relu(x)
         x = self.fc2(x)
+        x = F.relu(x)
+        x = self.fc3(x)
         return x
 
 
 class Agent:
-    def __init__(
-        self,
-        input_dim,
-        output_dim,
-        lr=0.001,
-        gamma=0.99,
-        epsilon=1.0,
-        eps_dec=1e-5,
-        eps_min=0.01,
-    ):
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.lr = lr
-        self.gamma = gamma
-        self.epsilon = epsilon
-        self.eps_dec = eps_dec
-        self.eps_min = eps_min
-        self.action_space = [i for i in range(self.output_dim)]
+    def __init__(self, hyperparameters=defaultdict(int)):
+        self.losses = []
+        self.rewards = []
 
-        self.Q = DQN(self.input_dim, self.output_dim, self.lr)
+        self.epsilon = hyperparameters["epsilon"] or 1.0
+        self.epsilon_floor = hyperparameters["epsilon_floor"] or 0.01
+        self.replay_buffer_capacity = hyperparameters["replay_buffer_capacity"] or 10000
 
-    def choose_action(self, observation):
-        if np.random.random() > self.epsilon:
-            state = torch.tensor(observation, dtype=torch.float).to(self.Q.device)
-            actions = self.Q.forward(state)
-            action = torch.argmax(actions).item() // 64
-        else:
-            action = np.random.choice(self.action_space)
+        self.batch_size = hyperparameters["batch_size"] or 32
+        self.episodes = hyperparameters["episodes"] or 3000
+        self.epsilon_decay = hyperparameters["epsilon_decay"] or 1 / (self.episodes)
 
-        return action
+        self.environment = hyperparameters["environment"] or gym.make(
+            "FrozenLake-v1", map_name="4x4", is_slippery=False
+        )
+        self.simulation_environment = hyperparameters[
+            "simulation_environment"
+        ] or gym.make(
+            "FrozenLake-v1", map_name="4x4", is_slippery=False, render_mode="human"
+        )
 
-    def decrement_epsilon(self):
-        self.epsilon -= self.eps_dec
-        self.epsilon = max(self.epsilon, self.eps_min)
+        self.learning_rate = hyperparameters["learning_rate"] or 1e-2
+        self.update_frequency = hyperparameters["update_frequency"] or 100
+        self.save_frequnecy = hyperparameters["save_frequency"] or 1000
+        self.discount_factor = hyperparameters["discount_factor"] or 0.95
+        self.model_save_path = hyperparameters["model_save_path"] or "./model.pth"
+        self.model_load_path = hyperparameters["model_load_path"] or "./model.pth"
+        self.log_frequency = hyperparameters["model_save_path"] or 1000
+        self.observation_space_size = self.environment.observation_space.n
+        self.action_space = self.environment.action_space
+        self.action_space_size = self.environment.action_space.n
+        self.replay_buffer = ReplayBuffer(max_size=self.replay_buffer_capacity)
 
-    def learn(self, state, action, reward, state_):
-        self.Q.optimizer.zero_grad()
-        states = torch.tensor(state, dtype=torch.float).to(self.Q.device)
-        actions = torch.tensor(action).to(self.Q.device)
-        rewards = torch.tensor(reward).to(self.Q.device)
-        states_ = torch.tensor(state_, dtype=torch.float).to(self.Q.device)
+        self.value_dqn = DQN(self.observation_space_size, self.action_space_size).to(
+            device
+        )
+        self.target_dqn = DQN(self.observation_space_size, self.action_space_size).to(
+            device
+        )
 
-        q_pred = self.Q.forward(states)[actions]
+        self.target_dqn.load_state_dict(self.value_dqn.state_dict())
 
-        q_next = self.Q.forward(states_).max()
+        self.loss_fn = nn.MSELoss()
+        self.optimizer = optim.Adam(self.value_dqn.parameters(), lr=self.learning_rate)
 
-        q_target = rewards + self.gamma * q_next
+    def learn(self):
+        states, actions, rewards, next_states, dones = self.replay_buffer.sample(
+            self.batch_size
+        )
 
-        loss = self.Q.loss(q_target, q_pred).to(self.Q.device)
+        dones = dones.unsqueeze(1)
+        actions = actions.unsqueeze(1)
+        rewards = rewards.unsqueeze(1)
+
+        pred_q = self.value_dqn(states).gather(dim=1, index=actions)
+        with torch.no_grad():
+            next_target_q_value = self.target_dqn(next_states).max(dim=1, keepdim=True)[
+                0
+            ]
+        next_target_q_value[dones] = 0
+
+        target_q = rewards + self.discount_factor * next_target_q_value
+        loss = self.loss_fn(pred_q, target_q)
+        self.losses.append(float(loss))
+
+        self.optimizer.zero_grad()
         loss.backward()
-        self.Q.optimizer.step()
-        self.decrement_epsilon()
+        self.optimizer.step()
 
+    def choose_action(self, state, inference=False):
+        if inference:
+            return torch.argmax(self.target_dqn(state)).item()
 
-def train():
-    env.reset()
-    current_state_t = torch.as_tensor(env.render())
-    input_size = current_state_t.shape
-    output_size = env.action_space.n
-    agent = Agent(input_dim=input_size, output_dim=output_size)
-    iterations = 10001
+        if np.random.random() < self.epsilon:
+            return self.action_space.sample()
 
-    scores = []
-    avg_scores = []
-    eps_history = []
-    for i in range(iterations):
-        score = 0
-        done = False
+        with torch.no_grad():
+            return torch.argmax(self.value_dqn(state)).item()
 
-        env.reset()
-        obs = torch.as_tensor(env.render())
-        step_count = 0
-        while not done:
-            action = agent.choose_action(obs)
-            obs_, reward, trunc, term, info = env.step(action)
-            done = term or trunc
+    def train(self):
+        for episode in range(1, self.episodes + 1):
+            current_state, _ = self.environment.reset()
+            current_state = self.state_to_one_hot(current_state)
+            done = False
+            truncated = False
+            current_episode_reward = 0
+            current_episode_steps = 0
 
-            if reward > 0:
-                reward += 10000
-            elif not done:
-                reward += obs_ - step_count
-            else:
-                reward -= 100
+            while not done and not truncated:
+                action = self.choose_action(current_state)
+                next_state, reward, done, truncated, _ = self.environment.step(action)
+                next_state = self.state_to_one_hot(next_state)
 
-            obs_ = torch.as_tensor(env.render())
-            score += reward
-            agent.learn(obs, action, reward, obs_)
-            obs = obs_
-            step_count += 1
+                self.replay_buffer.append(
+                    current_state, action, reward, next_state, done
+                )
 
-        scores.append(score)
-        eps_history.append(agent.epsilon)
+                if len(self.replay_buffer) > self.batch_size and sum(self.rewards):
+                    self.learn()
 
-        if i % 100 == 0:
-            avg_score = np.mean(scores[-100:])
-            avg_scores.append(avg_score)
+                    if episode % self.update_frequency == 0:
+                        self.update_target_model()
+
+                current_episode_reward += reward
+                current_state = next_state
+                current_episode_steps += 1
+            self.rewards.append(current_episode_reward)
+            self.update_epsilon()
+
+            if episode % self.save_frequnecy:
+                torch.save(self.target_dqn.state_dict(), self.model_save_path)
+
+            if episode % self.log_frequency == 0:
+                self.plot_losses()
+                self.plot_rewards()
+
             print(
-                "episode ",
-                i,
-                "score %.1f avg score %.5f epsilon %.2f"
-                % (score, avg_score, agent.epsilon),
+                f"Episode: {episode}, Current Episode Steps: {current_episode_steps}, Reward: {current_episode_reward}, Epsilon: {self.epsilon}"
             )
 
-            plt.plot([x * 100 for x in range(len(avg_scores))], avg_scores)
-            plt.savefig("scores.png")
+    def update_epsilon(self):
+        self.epsilon = max(self.epsilon_floor, self.epsilon - self.epsilon_decay)
 
-            model_path = "model.pth"
-            torch.save(agent.Q.state_dict(), model_path)
+    def update_target_model(self):
+        self.target_dqn.load_state_dict(self.value_dqn.state_dict())
 
+    def state_to_one_hot(self, state):
+        one_hot = torch.zeros(
+            self.observation_space_size, dtype=torch.float32, device=device
+        )
+        one_hot[state] = 1
 
-def simulate():
-    env.reset()
-    current_state_t = torch.as_tensor(env.render())
-    input_size = current_state_t.shape
-    output_size = env.action_space.n
-    agent = Agent(input_dim=input_size, output_dim=output_size, epsilon=0)
+        return one_hot
 
-    final_model_path = "model.pth"
-    agent.Q.load_state_dict(torch.load(final_model_path))
-    agent.Q.eval()
+    def plot_losses(self):
+        plt.figure(1)
+        plt.plot(self.losses)
+        plt.savefig("loss.png")
+        plt.clf()
 
-    terminated = False
-    truncated = False
-    env2 = gym.make(
-        "FrozenLake-v1", render_mode="human", map_name="4x4", is_slippery=False
-    )
-    env2.reset()
+    def plot_rewards(self):
+        plt.figure(2)
+        plt.plot(self.rewards)
+        plt.savefig("reward.png")
+        plt.clf()
 
-    while not terminated and not truncated:
-        action = agent.choose_action(current_state_t)
-        next_state, _, terminated, truncated, _ = env.step(action)
-        env2.step(action)
-        env2.render()
-        current_state_t = torch.as_tensor(env.render())
+    def simulate(self):
+        done = False
+        truncated = False
+        current_state, _ = self.simulation_environment.reset()
+        current_state = self.state_to_one_hot(current_state)
+        self.target_dqn.load_state_dict(torch.load(self.model_load_path))
+        self.target_dqn.eval()
 
-    env.close()
-    env2.close()
+        while not done and not truncated:
+            action = self.choose_action(current_state, inference=True)
+            next_state, _, done, truncated, _ = self.simulation_environment.step(action)
+            self.simulation_environment.render()
+            next_state = self.state_to_one_hot(next_state)
+            current_state = next_state
 
 
 if __name__ == "__main__":
-    train()
-    simulate()
+    agent = Agent()
+    # agent.train()
+    agent.simulate()
