@@ -3,3 +3,5 @@ venv/
 *.pkl
 *.pth
 *.zip
+
+__pycache__

@@ -10,8 +10,6 @@ import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
 
-env = gym.make("FrozenLake-v1", map_name="4x4", is_slippery=False)
-
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch.set_default_device(device)
 
@@ -122,12 +120,14 @@ class Agent:
         self.action_space_size = self.environment.action_space.n
         self.replay_buffer = ReplayBuffer(max_size=self.replay_buffer_capacity)
 
-        self.value_dqn = DQN(self.observation_space_size, self.action_space_size).to(
-            device
-        )
-        self.target_dqn = DQN(self.observation_space_size, self.action_space_size).to(
-            device
-        )
+        self.value_dqn = DQN(
+            torch.numel(self.encode_state(self.action_space.sample())),
+            self.action_space_size,
+        ).to(device)
+        self.target_dqn = DQN(
+            torch.numel(self.encode_state(self.action_space.sample())),
+            self.action_space_size,
+        ).to(device)
 
         self.target_dqn.load_state_dict(self.value_dqn.state_dict())
 
@@ -171,7 +171,7 @@ class Agent:
     def train(self):
         for episode in range(1, self.episodes + 1):
             current_state, _ = self.environment.reset()
-            current_state = self.state_to_one_hot(current_state)
+            current_state = self.encode_state(current_state)
             done = False
             truncated = False
             current_episode_reward = 0
@@ -180,7 +180,7 @@ class Agent:
             while not done and not truncated:
                 action = self.choose_action(current_state)
                 next_state, reward, done, truncated, _ = self.environment.step(action)
-                next_state = self.state_to_one_hot(next_state)
+                next_state = self.encode_state(next_state)
 
                 self.replay_buffer.append(
                     current_state, action, reward, next_state, done
@@ -215,7 +215,7 @@ class Agent:
     def update_target_model(self):
         self.target_dqn.load_state_dict(self.value_dqn.state_dict())
 
-    def state_to_one_hot(self, state):
+    def encode_state(self, state):
         one_hot = torch.zeros(
             self.observation_space_size, dtype=torch.float32, device=device
         )
@@ -239,7 +239,7 @@ class Agent:
         done = False
         truncated = False
         current_state, _ = self.simulation_environment.reset()
-        current_state = self.state_to_one_hot(current_state)
+        current_state = self.encode_state(current_state)
         self.target_dqn.load_state_dict(torch.load(self.model_load_path))
         self.target_dqn.eval()
 
@@ -247,11 +247,11 @@ class Agent:
             action = self.choose_action(current_state, inference=True)
             next_state, _, done, truncated, _ = self.simulation_environment.step(action)
             self.simulation_environment.render()
-            next_state = self.state_to_one_hot(next_state)
+            next_state = self.encode_state(next_state)
             current_state = next_state
 
 
 if __name__ == "__main__":
     agent = Agent()
-    # agent.train()
+    agent.train()
     agent.simulate()
