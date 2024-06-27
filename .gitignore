@@ -5,3 +5,6 @@ venv/
 *.zip
 
 __pycache__
+
+*.gguf
+.env

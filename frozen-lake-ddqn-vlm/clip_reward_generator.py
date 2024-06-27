@@ -36,14 +36,7 @@ def clip_infer_reward(current_state, next_state, text, iteration=0):
             (100.0 * image_features_next @ text_features.T).cpu().numpy()[0][0]
         )
 
-    similarity_difference = similarity_next - similarity_current
-
-    if similarity_difference == 0:
-        similarity_reward = -1
-    elif similarity_difference > 0:
-        similarity_reward = similarity_difference
-    else:
-        similarity_reward = 0
+    similarity_reward = 1 if similarity_next - similarity_current > 0 else 0
 
     if iteration % 1000 == 0:
         fig, ax = plt.subplots(1, 2, figsize=(12, 6))
@@ -63,7 +56,7 @@ def clip_infer_reward(current_state, next_state, text, iteration=0):
             fontsize=12,
         )
 
-        output_path = f"vlm-scores/iteration-{iteration}.png"
+        output_path = f"clip-scores/iteration-{iteration}.png"
         plt.savefig(output_path)
         plt.close(fig)
 

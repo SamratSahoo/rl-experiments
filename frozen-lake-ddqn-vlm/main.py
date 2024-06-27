@@ -120,10 +120,7 @@ class Agent:
         self.discount_factor = hyperparameters["discount_factor"] or 0.95
         self.model_save_path = hyperparameters["model_save_path"] or "./model.pth"
         self.model_load_path = hyperparameters["model_load_path"] or "./model.pth"
-        self.goal_text = (
-            hyperparameters["goal_text"]
-            or "Reduce distance between the gift box and the character to zero with no broken ice."
-        )
+        self.goal_text = hyperparameters["goal_text"] or "Get the present"
 
         self.log_frequency = hyperparameters["model_save_path"] or 1000
         self.observation_space_size = self.environment.observation_space.n
