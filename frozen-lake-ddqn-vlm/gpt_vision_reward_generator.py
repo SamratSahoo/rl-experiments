@@ -60,7 +60,7 @@ if __name__ == "__main__":
         encoded_file = base64.b64encode(image_file.read()).decode("utf-8")
 
     original_state = get_state_embedding(
-        "Describe the spatial location the green player. Do not describe anything else.",
+        "which row and column is the player in?",
         encoded_file,
     )
 
@@ -68,7 +68,7 @@ if __name__ == "__main__":
         encoded_file = base64.b64encode(image_file.read()).decode("utf-8")
 
     new_state = get_state_embedding(
-        "Describe the spatial location the green player. Do not describe anything else.",
+        "which row and column is the player in?",
         encoded_file,
     )
 

@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
-from clip_reward_generator import clip_infer_reward
+from vit_quickgelu_reward_generator import vit_infer_reward
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch.set_default_device(device)
@@ -120,7 +120,9 @@ class Agent:
         self.discount_factor = hyperparameters["discount_factor"] or 0.95
         self.model_save_path = hyperparameters["model_save_path"] or "./model.pth"
         self.model_load_path = hyperparameters["model_load_path"] or "./model.pth"
-        self.goal_text = hyperparameters["goal_text"] or "Get the present"
+        self.goal_text = (
+            hyperparameters["goal_text"] or "The elf should be on top of the gift box"
+        )
 
         self.log_frequency = hyperparameters["model_save_path"] or 1000
         self.observation_space_size = self.environment.observation_space.n
@@ -196,7 +198,7 @@ class Agent:
                 self.rbg_environment.step(action)
                 next_state_t = self.rbg_environment.render()
 
-                reward = clip_infer_reward(
+                reward = vit_infer_reward(
                     current_state_t, next_state_t, self.goal_text, i
                 )
 
