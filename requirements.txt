@@ -4,7 +4,7 @@ anyio==4.4.0
 box2d-py==2.3.5
 certifi==2024.6.2
 charset-normalizer==3.3.2
-clip==1.0
+git+https://github.com/openai/CLIP.git
 cloudpickle==3.0.0
 cmake==3.29.5.1
 contourpy==1.1.1
