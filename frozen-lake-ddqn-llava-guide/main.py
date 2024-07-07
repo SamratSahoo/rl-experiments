@@ -2,7 +2,6 @@
 
 from collections import defaultdict, deque
 import gymnasium as gym
-from gymnasium.envs.toy_text.frozen_lake import FrozenLakeEnv
 
 from matplotlib import pyplot as plt
 import torch
@@ -13,17 +12,6 @@ import numpy as np
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch.set_default_device(device)
-
-
-class ExtendedFrozenLake(FrozenLakeEnv):
-    def __init__(self, render_mode="rgb_array"):
-        FrozenLakeEnv.__init__(self, render_mode=render_mode)
-        self.s = 15
-        self.step(1)
-        self.reset()
-
-    def reset(self):
-        self.s = 15
 
 
 class ReplayBuffer:
@@ -114,17 +102,15 @@ class Agent:
         self.environment = hyperparameters["environment"] or gym.make(
             "FrozenLake-v1", map_name="4x4", is_slippery=False
         )
-        self.render_environment = hyperparameters["render_environment"] or gym.make(
+
+        self.rbg_environment = hyperparameters["rgb_environment"] or gym.make(
             "FrozenLake-v1", map_name="4x4", is_slippery=False, render_mode="rgb_array"
         )
+
         self.simulation_environment = hyperparameters[
             "simulation_environment"
         ] or gym.make(
             "FrozenLake-v1", map_name="4x4", is_slippery=False, render_mode="human"
-        )
-
-        self.goal_environment = (
-            hyperparameters["goal_environment"] or ExtendedFrozenLake()
         )
 
         self.learning_rate = hyperparameters["learning_rate"] or 1e-2
@@ -133,6 +119,10 @@ class Agent:
         self.discount_factor = hyperparameters["discount_factor"] or 0.95
         self.model_save_path = hyperparameters["model_save_path"] or "./model.pth"
         self.model_load_path = hyperparameters["model_load_path"] or "./model.pth"
+        self.goal_text = (
+            hyperparameters["goal_text"] or "The elf should be on top of the gift box"
+        )
+
         self.log_frequency = hyperparameters["model_save_path"] or 1000
         self.observation_space_size = self.environment.observation_space.n
         self.action_space = self.environment.action_space
@@ -188,10 +178,12 @@ class Agent:
             return torch.argmax(self.value_dqn(state)).item()
 
     def train(self):
-        goal_state = self.get_goal_state()
+        i = 0
         for episode in range(1, self.episodes + 1):
             current_state, _ = self.environment.reset()
-            current_state_t, _ = self.render_environment.reset()
+            self.rbg_environment.reset()
+            current_state_t = self.rbg_environment.render()
+
             current_state = self.encode_state(current_state)
             done = False
             truncated = False
@@ -199,10 +191,11 @@ class Agent:
             current_episode_steps = 0
 
             while not done and not truncated:
+                i += 1
                 action = self.choose_action(current_state)
                 next_state, reward, done, truncated, _ = self.environment.step(action)
-                next_state_t, _, _, _, _ = self.render_environment.step(action)
-                reward = self.similarity(next_state, goal_state)
+                self.rbg_environment.step(action)
+                next_state_t = self.rbg_environment.render()
                 next_state = self.encode_state(next_state)
 
                 self.replay_buffer.append(
@@ -217,7 +210,9 @@ class Agent:
 
                 current_episode_reward += reward
                 current_state = next_state
+                current_state_t = next_state_t
                 current_episode_steps += 1
+
             self.rewards.append(current_episode_reward)
             self.update_epsilon()
 
@@ -246,11 +241,6 @@ class Agent:
 
         return one_hot
 
-    def get_goal_state(self):
-        self.goal_environment.reset()
-        img = self.goal_environment.render()
-        return np.array(img)
-
     def plot_losses(self):
         plt.figure(1)
         plt.plot(self.losses)
@@ -262,10 +252,6 @@ class Agent:
         plt.plot(self.rewards)
         plt.savefig("reward.png")
         plt.clf()
-
-    def similarity(self, A, B):
-        mse = max(np.sum(np.square(A - B)), 0.01)
-        return 1 / mse
 
     def simulate(self):
         done = False
@@ -285,6 +271,5 @@ class Agent:
 
 if __name__ == "__main__":
     agent = Agent()
-
     # agent.train()
     agent.simulate()

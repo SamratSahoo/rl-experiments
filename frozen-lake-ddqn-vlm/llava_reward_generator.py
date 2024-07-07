@@ -2,6 +2,7 @@ from PIL import Image
 import requests
 import torchvision
 from transformers import AutoProcessor, LlavaForConditionalGeneration
+import numpy as np
 
 model = LlavaForConditionalGeneration.from_pretrained(
     "llava-hf/llava-v1.6-mistral-7b-hf"
