@@ -3,9 +3,6 @@ import torchvision
 
 from transformers import AutoProcessor, LlavaForConditionalGeneration  # type: ignore
 import numpy as np
-from dotenv import load_dotenv
-
-load_dotenv()
 
 
 model = LlavaForConditionalGeneration.from_pretrained(
