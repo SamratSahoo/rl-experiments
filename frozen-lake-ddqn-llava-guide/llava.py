@@ -1,7 +1,12 @@
 from PIL import Image
 import torchvision
+
 from transformers import AutoProcessor, LlavaForConditionalGeneration  # type: ignore
 import numpy as np
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 model = LlavaForConditionalGeneration.from_pretrained(
     "llava-hf/llava-v1.6-mistral-7b-hf"
@@ -13,7 +18,7 @@ VLM_POLICY_PROMPT = """
 I will give you a question based on an image; you should answer in the following format.
 
 EXAMPLE:
-Q: Your goal is to get to the gift box. You can go left, right, up, or down. Which direction should you go in?
+Q: You are the elf. Your goal is to get to the gift box. You can go left, right, up, or down. Which direction should you go in?
 
 A: I am trying to reach the gift box in the bottom-left corner. If I go up, there is a pond trap that will result in my death, so I cannot go up. If I go left, I will stay in the same place because that is the edge of the map. I can go either right or downwards, but going right would take me further away from the gift box. Therefore, I will go downwards.
 
@@ -22,7 +27,7 @@ A: I am trying to reach the gift box in the bottom-left corner. If I go up, ther
 }
 
 YOUR QUESTION:
-Q: Your goal is to get to the gift box. You can go left, right, up, or down. Which direction should you go in?
+Q: You are the elf. Your goal is to get to the gift box. You can go left, right, up, or down. Which direction should you go in?
 
 A:
 """
@@ -39,11 +44,10 @@ def generate_vlm_policy(image_t, question_text=VLM_POLICY_PROMPT):
 
 
 if __name__ == "__main__":
-    image = torchvision.transforms.PILToTensor()(Image.open("./test/image.png"))
+    image_t = torchvision.transforms.PILToTensor()(Image.open("./test/image.png"))
 
     print(
         generate_vlm_policy(
-            "Describe the spatial location the green player. Do not describe anything else.",
-            image,
+            image_t,
         )
     )
