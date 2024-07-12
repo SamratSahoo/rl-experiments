@@ -6,6 +6,7 @@ from gymnasium.envs.toy_text.frozen_lake import FrozenLakeEnv
 from PIL import Image
 from llava import generate_analysis, generate_label
 from stable_baselines3 import PPO
+from stable_baselines3.common import env_checker
 
 
 # class FrozenLakeByteEnvironment(ObservationWrapper):
@@ -36,6 +37,7 @@ class FrozenLakeExtendedEnv(FrozenLakeEnv):
             current_state_bytes, next_state_bytes, self.objective
         )
         reward = int(generate_label(analysis, self.objective))
+        print(reward)
 
         return next_state, reward, terminated, truncated, info
 
@@ -60,7 +62,7 @@ if __name__ == "__main__":
         current_state, _ = env.reset()
 
         model = PPO("MlpPolicy", env, verbose=1)
-        model.learn(total_timesteps=1000)
+        model.learn(total_timesteps=10)
 
         model.save("model.zip")
         env.close()

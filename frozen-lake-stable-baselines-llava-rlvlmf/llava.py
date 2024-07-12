@@ -1,6 +1,7 @@
 # Llava implementation of https://rlvlmf2024.github.io/
 
 import ollama
+import re
 
 
 def generate_analysis(image1, image2, objective):
@@ -33,6 +34,7 @@ def generate_analysis(image1, image2, objective):
                 "images": [],
             },
         ],
+        keep_alive=-1,
     )
     return response["message"]["content"]
 
@@ -47,9 +49,12 @@ def generate_label(vlm_analysis, objective):
         Text Responses:
             {vlm_analysis}
 
-            Is the goal better achieved in Image 1 or Image 2? 
-            **Reply a single line** of 0 if the goal is better achieved in Image 1, or 1 if it is better achieved in Image 2. 
-            Else **Reply a single line** of -1 if the text is unsure or there is no difference.  
+        
+        Is the goal better achieved in Image 1 or Image 2? 
+         - **Reply a single line** of 0 if the goal is better achieved in Image 1, or 1 if it is better achieved in Image 2. 
+         - Else **reply a single line** of -1 if the text is unsure or there is no difference.  
+         - Limit your response to one of these numbers: -1, 0, or 1. 
+         - Do not include any other details in your response.
     """
 
     response = ollama.chat(
@@ -61,9 +66,13 @@ def generate_label(vlm_analysis, objective):
                 "images": [],
             },
         ],
+        keep_alive=-1,
     )
 
-    return response["message"]["content"]
+    content = response["message"]["content"]
+    nums = re.findall(r"-?\d+", content)
+
+    return nums[0]
 
 
 if __name__ == "__main__":
