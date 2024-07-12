@@ -8,7 +8,6 @@ git+https://github.com/openai/CLIP.git
 cloudpickle==3.0.0
 cmake==3.29.5.1
 contourpy==1.1.1
-crewai==0.35.8
 cycler==0.12.1
 Cython==0.29.37
 decorator==4.4.2
