@@ -1,10 +1,26 @@
-# Llava implementation of https://rlvlmf2024.github.io/
-
-import ollama
+import base64
+import json
 import re
+
+import requests
+import numpy as np
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+open_ai_api_key = os.environ["OPEN_AI_API_KEY"]
+
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {open_ai_api_key}",
+}
 
 
 def generate_analysis(image1, image2, objective):
+    image1 = base64.b64encode(image1).decode("utf-8")
+    image2 = base64.b64encode(image2).decode("utf-8")
+
     IMAGE1_PROMPT = f"""Consider the following two images: 
                     Image 1:"""
     IMAGE2_PROMPT = f"""Image 2:"""
@@ -15,28 +31,45 @@ def generate_analysis(image1, image2, objective):
         3. The goal is to {objective}. Is there any difference between Image 1 and Image 2 in terms of how close the agent has gotten towards achieving the goal?
     """
 
-    response = ollama.chat(
-        model="llava",
-        messages=[
+    payload = {
+        "model": "gpt-4o",
+        "messages": [
             {
                 "role": "user",
-                "content": IMAGE1_PROMPT,
-                "images": [image1],
+                "content": [
+                    {"type": "text", "text": IMAGE1_PROMPT},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{image1}"},
+                    },
+                ],
             },
             {
                 "role": "user",
-                "content": IMAGE2_PROMPT,
-                "images": [image2],
+                "content": [
+                    {"type": "text", "text": IMAGE2_PROMPT},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{image2}"},
+                    },
+                ],
             },
             {
                 "role": "user",
-                "content": ANALYSIS_PROMPT,
-                "images": [],
+                "content": [
+                    {"type": "text", "text": ANALYSIS_PROMPT},
+                ],
             },
         ],
-        keep_alive=-1,
+        "max_tokens": 300,
+    }
+
+    response = requests.post(
+        "https://api.openai.com/v1/chat/completions", headers=headers, json=payload
     )
-    return response["message"]["content"]
+
+    analysis = response.json()["choices"][0]["message"]["content"]
+    return analysis
 
 
 def generate_label(vlm_analysis, objective):
@@ -57,19 +90,23 @@ def generate_label(vlm_analysis, objective):
          - Do not include any other details in your response.
     """
 
-    response = ollama.chat(
-        model="llava",
-        messages=[
+    payload = {
+        "model": "gpt-4o",
+        "messages": [
             {
                 "role": "user",
-                "content": LABEL_TEMPLATE,
-                "images": [],
+                "content": [
+                    {"type": "text", "text": LABEL_TEMPLATE},
+                ],
             },
         ],
-        keep_alive=-1,
-    )
+        "max_tokens": 300,
+    }
 
-    content = response["message"]["content"]
+    response = requests.post(
+        "https://api.openai.com/v1/chat/completions", headers=headers, json=payload
+    )
+    content = response.json()["choices"][0]["message"]["content"]
     nums = re.findall(r"-?\d+", content)
 
     return nums[0]
@@ -77,8 +114,8 @@ def generate_label(vlm_analysis, objective):
 
 if __name__ == "__main__":
     objective = "get the elf to the giftbox while avoiding the ponds"
-    image1 = "/home/samrat/Documents/rl-experiments/frozen-lake-ddqn-llava-guide/test/image.png"
-    image2 = "/home/samrat/Documents/rl-experiments/frozen-lake-ddqn-llava-guide/test/image2.png"
+    image1 = "/home/samrat/Documents/rl-experiments/frozen-lake-stable-baselines-rlvlmf/test/image.png"
+    image2 = "/home/samrat/Documents/rl-experiments/frozen-lake-stable-baselines-rlvlmf/test/image2.png"
 
     with open(image1, "rb") as file:
         image1 = file.read()
